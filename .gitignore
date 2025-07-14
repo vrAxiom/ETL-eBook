@@ -1,0 +1,12 @@
+.venv/
+*.msi 
+*.pdf
+*.epub
+*.html
+*.md
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.webp
