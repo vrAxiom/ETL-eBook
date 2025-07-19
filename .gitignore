@@ -1,12 +1,4 @@
 .venv/
-*.msi 
-*.pdf
-*.epub
-*.html
+*.msi
+output/
 book/
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.svg
-*.webp
