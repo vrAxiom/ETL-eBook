@@ -78,7 +78,7 @@ def convert_markdown_to_epub(output_file):
         nav_points.append(chapter)
 
     # TOC and Navigation
-    book.toc = tuple(nav_points)
+    book.toc = nav_points  # Fix: assign as list, not tuple
     book.spine = ['nav'] + epub_items
     book.add_item(epub.EpubNav())
     book.add_item(epub.EpubNcx())
@@ -110,32 +110,21 @@ def convert_markdown_to_html(output_file):
     <p><em>By {AUTHOR}</em></p>
     <hr>
 """
-    
     for idx, md_file in enumerate(chapters, 1):
         with open(md_file, 'r', encoding='utf-8') as f:
             content = f.read()
-        
         html_chapter = pypandoc.convert_text(content, 'html', format='md')
-        chapter_title = md_file.stem.replace('_', ' ').title()
-        
-        html_content += f"""
-    <h2>Chapter {idx}: {chapter_title}</h2>
-    {html_chapter}
-    <hr>
-"""
-    
+        # Remove the extra generated chapter heading
+        html_content += f"\n{html_chapter}\n<hr>\n"
     html_content += """
 </body>
 </html>
 """
-    
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(html_content)
-    
     print(f"HTML created: {output_file}")
-    
-    # Open in browser
     try:
+        import webbrowser
         webbrowser.open(f'file://{os.path.abspath(output_file)}')
         print("Opened in browser")
     except:
@@ -184,7 +173,7 @@ def clean_html_for_pdf(html):
     html = re.sub(r'<hr\s*/?>', '', html, flags=re.IGNORECASE)
     return html
 
-class MyFPDF(FPDF, HTMLMixin):
+class MyFPDF(FPDF):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.html_font = 'DejaVu'
@@ -198,7 +187,8 @@ class MyFPDF(FPDF, HTMLMixin):
     def _font_family_for_tag(self, tag):
         if tag in ['code', 'pre']:
             return 'DejaVu'
-        return super()._font_family_for_tag(tag)
+        # Remove call to super()._font_family_for_tag(tag) as it may not exist
+        return 'DejaVu'
 
     def handle_starttag(self, tag, attrs):
         if tag == 'pre':
@@ -237,8 +227,7 @@ class MyFPDF(FPDF, HTMLMixin):
                 self.cell(6, 6, u'•', ln=0)
             elif self._list_type == 'ol':
                 self.cell(6, 6, f'{self._list_count}.', ln=0)
-        else:
-            super().handle_starttag(tag, attrs)
+        # Remove call to super().handle_starttag(tag, attrs)
 
     def handle_endtag(self, tag):
         if tag == 'pre':
@@ -264,8 +253,7 @@ class MyFPDF(FPDF, HTMLMixin):
             self.ln(2)
         elif tag == 'li':
             self.ln(2)
-        else:
-            super().handle_endtag(tag)
+        # Remove call to super().handle_endtag(tag)
 
     def handle_data(self, data):
         if self._in_pre:
@@ -280,30 +268,83 @@ class MyFPDF(FPDF, HTMLMixin):
         else:
             # Remove stray encoding artifacts from normal text
             clean_data = data.replace('Â', '').replace('\xc2', '')
-            super().handle_data(clean_data)
+            # Remove call to super().handle_data(clean_data)
+            self.cell(0, 6, clean_data, ln=1)
+
+def render_markdown_to_pdf(pdf, md_content):
+    import pypandoc
+    pdf.set_font("DejaVu", '', 12)  # Ensure a default font is always set
+    plain = pypandoc.convert_text(md_content, 'plain', format='md')
+    lines = plain.splitlines()
+    for line in lines:
+        line = line.rstrip()
+        # Remove unsupported emoji glyphs
+        line = line.replace('✅', 'v').replace('❌', 'X')
+        if not line or line.isspace():
+            pdf.ln(4)
+            continue
+        # Avoid FPDFException for lines with only whitespace or very long words
+        if len(line.strip()) == 0:
+            continue
+        # Truncate very long words to avoid FPDFException
+        max_width = 180  # mm, for A4 page
+        if any(len(word) > 100 for word in line.split()):
+            # Break up long words
+            words = line.split()
+            new_line = ''
+            for word in words:
+                if len(word) > 100:
+                    # Insert spaces every 50 chars
+                    word = ' '.join([word[i:i+50] for i in range(0, len(word), 50)])
+                new_line += word + ' '
+            line = new_line.strip()
+        # Simple header detection
+        if line.startswith('#'):
+            level = len(line) - len(line.lstrip('#'))
+            text = line.lstrip('#').strip()
+            pdf.set_font("DejaVu", 'B', 16 - (level * 2))
+            pdf.cell(0, 10, text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_font("DejaVu", '', 12)
+        # List detection
+        elif line.lstrip().startswith(('-', '*', '+')):
+            pdf.set_font("DejaVu", '', 12)
+            pdf.set_x(pdf.l_margin + 6)
+            pdf.cell(0, 8, u'• ' + line.lstrip('-*+ ').strip(), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        # Numbered list detection
+        elif line.lstrip()[:2].isdigit() and line.lstrip()[2:4] == '. ':
+            pdf.set_font("DejaVu", '', 12)
+            pdf.set_x(pdf.l_margin + 6)
+            pdf.cell(0, 8, line.lstrip(), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        # Code block (very basic)
+        elif line.startswith('    ') or line.startswith('\t'):
+            pdf.set_font("DejaVu", 'I', 11)
+            pdf.set_x(pdf.l_margin + 10)
+            pdf.multi_cell(0, 7, line.strip())
+            pdf.set_font("DejaVu", '', 12)
+        else:
+            pdf.set_font("DejaVu", '', 12)
+            # Only call multi_cell if line has visible characters
+            if line.strip():
+                pdf.multi_cell(0.1 + max_width, 8, line)
+
 
 def convert_markdown_to_pdf(output_file):
     pdf = MyFPDF()
     pdf.set_auto_page_break(auto=True, margin=20)
-    pdf.default_encoding = 'utf-8'
-    pdf.core_fonts_encoding = 'utf-8'
-
-    # Add Unicode font
     font_path = "fonts/DejaVu Sans/"
     pdf.add_font('DejaVu', '', font_path + 'DejaVuSans.ttf')
     pdf.add_font('DejaVu', 'B', font_path + 'DejaVuSans-Bold.ttf')
     pdf.add_font('DejaVu', 'I', font_path + 'DejaVuSans-Oblique.ttf')
     pdf.add_font('DejaVu', 'BI', font_path + 'DejaVuSans-BoldOblique.ttf')
 
-    # 1. Cover page
+    # Cover page logic (unchanged)
     cover_path = os.path.join("book", "cover.png")
     if os.path.exists(cover_path):
         pdf.add_page()
-        # --- Fit cover image to A4 page (210x297mm) ---
         a4_width, a4_height = 210, 297
+        from PIL import Image
         with Image.open(cover_path) as img:
             img_w, img_h = img.size
-            # Convert px to mm using 72 dpi (FPDF default)
             dpi = img.info.get('dpi', (72, 72))[0]
             img_w_mm = img_w * 25.4 / dpi
             img_h_mm = img_h * 25.4 / dpi
@@ -313,14 +354,12 @@ def convert_markdown_to_pdf(output_file):
             x = (a4_width - disp_w) / 2
             y = (a4_height - disp_h) / 2
         pdf.image(cover_path, x=x, y=y, w=disp_w, h=disp_h)
-        pdf.ln(a4_height)  # Move to next page
+        pdf.ln(a4_height)
 
-    # 2. Table of Contents page (reserve it right after cover)
+    # Table of Contents page (unchanged)
     pdf.add_page()
     toc_page = pdf.page_no()
-    # Don't write TOC yet, just reserve the page
 
-    # 3. Chapters
     chapters = get_chapter_files()
     toc_entries = []
     for idx, md_file in enumerate(chapters, 1):
@@ -328,27 +367,20 @@ def convert_markdown_to_pdf(output_file):
         chapter_title = md_file.stem.replace('_', ' ').title()
         toc_entries.append((chapter_title, pdf.page_no()))
 
-        # Convert markdown to HTML
         with open(md_file, 'r', encoding='utf-8') as f:
             md_content = f.read()
-        html_content = pypandoc.convert_text(md_content, 'html', format='md')
-        sanitized_html = sanitize_text(html_content)
-        cleaned_html = clean_html_for_pdf(sanitized_html)
+        render_markdown_to_pdf(pdf, md_content)
 
-        pdf.set_font("DejaVu", '', 12)
-        pdf.write_html(cleaned_html)
-
-    # 4. Go back to TOC page and write TOC
+    # TOC logic (unchanged)
     pdf.page = toc_page
     pdf.set_font("DejaVu", 'B', 18)
     pdf.cell(0, 10, "Table of Contents", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(8)
     pdf.set_font("DejaVu", '', 12)
     for title, page in toc_entries:
-        clean_title = title.replace('\x95', '').replace('•', '')  # Remove problematic bullet chars
+        clean_title = title.replace('\x95', '').replace('•', '')
         pdf.cell(0, 8, f"{clean_title} .......... {page}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-    # 5. Output
     pdf.output(output_file)
     print(f"PDF created: {output_file}")
 

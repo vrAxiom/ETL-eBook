@@ -4,130 +4,111 @@
 
 ---
 
-## Chapter 1: Chapter 1 Preface And Intro
+## Chapter 1: Chapter 1 Environment Setup
 
-# Chapter 1: Preface & Introduction – Getting Started with ETL
+# Chapter 1: Setting Up Your Environment
 
-## Preface
-
-The explosion of data in modern businesses has turned ETL (Extract, Transform, Load) pipelines into an essential foundation for any data-driven solution. Whether you’re building dashboards, deploying machine learning models, or running analytics in real time, having clean, well-structured data is critical.
-
-This ebook is tailored for aspiring data professionals and software engineers looking to understand and implement ETL pipelines using Python, SQL, Pandas, DuckDB, and lightweight databases like SQLite. You’ll learn to build robust pipelines from scratch and connect them with modern data interfaces including Flask, FastAPI, and natural language querying tools like LangChain.
-
-Each chapter blends conceptual explanations with practical examples, following a consistent structure:
-
-- Learn the What and Why
-- Hands-on with Code
-- Real-world Case Study (Uber Business Modeling)
-- Tips, Tricks, and Best Practices
-- Exercises for Practice
-
-By the end of this book, you’ll be able to construct repeatable, testable, and production-ready ETL workflows. Let’s begin with the basics.
+This chapter will guide you through preparing your Python environment and obtaining a real-world dataset to use throughout the ebook. By the end, you’ll be ready to follow along with hands-on ETL examples.
 
 ---
 
-## Introduction to ETL
+## 1.1 Install Python and Create a Virtual Environment
 
-### What is ETL?
-
-**ETL** stands for Extract, Transform, Load – the process of gathering raw data from sources, reshaping it into useful formats, and storing it in a system where it can be queried or analyzed.
-
-- **Extract**: Fetch data from sources like CSVs, SQL databases, APIs, and real-time streams.
-- **Transform**: Clean, validate, apply logic, and restructure the data to meet analytical needs.
-- **Load**: Push the transformed data into target systems like SQLite or PostgreSQL.
-
-This pipeline creates an essential bridge from operational data to analytical insights.
-
-### Why ETL Matters for Data Science
-
-Without reliable ETL, data scientists waste time cleaning messy datasets. A solid ETL pipeline ensures:
-
-- Reproducibility
-- Clean and well-typed data
-- Automated updates
-- Modular testing and debugging
-
-### Tools You’ll Use
-
-We’ll use a powerful yet minimal tech stack:
-
-- **Pandas**: For basic extraction and data manipulation.
-- **DuckDB**: For high-performance SQL transformations directly in-memory.
-- **SQLite**: For loading and storing structured results.
-- **SQLAlchemy**: For connecting to external SQL databases.
-- **Flask/FastAPI**: For serving your ETL outputs via APIs.
-
-This stack is easy to use locally and deployable on the cloud.
+- **Recommended:** Python 3.8 or newer.
+- Check your version:
+  ```sh
+  python3 --version
+  ```
+- (Optional but recommended) Create a virtual environment:
+  ```sh
+  python3 -m venv etl_env
+  source etl_env/bin/activate  # On Windows: etl_env\Scripts\activate
+  ```
 
 ---
 
-## 1.1 Installing Your Toolkit
+## 1.2 Install Required Packages
 
-Install the essentials:
+Install the core libraries for ETL workflows:
 
-```bash
+```sh
 pip install pandas duckdb sqlalchemy flask
 ```
 
-*This command installs the core Python libraries for ETL workflows: Pandas for data manipulation, DuckDB for in-memory SQL, SQLAlchemy for database connections, and Flask for serving APIs. SQLite is included with Python by default.*
+- **Pandas**: Data manipulation
+- **DuckDB**: In-memory SQL analytics
+- **SQLAlchemy**: Database connections
+- **Flask**: Serving APIs
+- (Optional) Jupyter for interactive exploration:
+  ```sh
+  pip install notebook
+  ```
 
 ---
 
-## 1.2 Loading Your First Dataset
+## 1.3 Download a Sample Dataset
 
-Let’s begin with a CSV file.
+We’ll use the Uber NYC TLC dataset as a practical example. You can download it from GitHub or Kaggle.
 
-### Practice Code
+- **From GitHub:**
+  - [Uber TLC FOIL Response](https://github.com/fivethirtyeight/uber-tlc-foil-response)
+  - Example (April 2014 data):
+    ```sh
+    wget https://github.com/fivethirtyeight/uber-tlc-foil-response/raw/master/uber-trip-data/uber-raw-data-apr14.csv
+    ```
+- **From Kaggle:**
+  1. Install Kaggle CLI: `pip install kaggle`
+  2. Authenticate with your Kaggle API token.
+  3. Download:
+     ```sh
+     kaggle datasets download -d fivethirtyeight/uber-pickups-in-new-york-city
+     unzip uber-pickups-in-new-york-city.zip
+     ```
 
+---
+
+## 1.4 Load and Explore the Dataset
+
+**Load the CSV into Pandas:**
 ```python
 import pandas as pd
-
-file_path = "data/uber_drivers.csv"
-df = pd.read_csv(file_path)
+df = pd.read_csv("uber-raw-data-apr14.csv")  # Use your downloaded file name
 print(df.head())
 print(df.info())
 ```
 
-*This code loads a CSV file into a Pandas DataFrame, prints the first few rows, and displays information about the data types and missing values. It is the first step in exploring your dataset.*
-
-### Inspecting
-
+**Inspect the Data:**
 ```python
 print(df.describe())
 print(df.isnull().sum())
 ```
 
-*These lines provide summary statistics for numeric columns and count the number of missing values in each column, helping you quickly assess data quality.*
-
 ---
 
-## 1.3 SQL Power with DuckDB
-
-Run queries directly on the DataFrame.
+## 1.5 (Optional) Register DataFrame with DuckDB
 
 ```python
 import duckdb
 con = duckdb.connect()
-con.register("drivers", df)
-result = con.execute("SELECT driver_id, rating FROM drivers WHERE rating > 4.7").fetchdf()
-print(result.head())
+con.register("uber_data", df)
+result = con.execute("SELECT * FROM uber_data LIMIT 5").fetchdf()
+print(result)
 ```
-
-*This code registers the DataFrame as a DuckDB table and runs a SQL query to select drivers with a rating above 4.7. The results are returned as a new DataFrame and printed. This demonstrates how to use SQL for data filtering directly on Pandas data.*
 
 ---
 
-## 1.4 Summary
+## 1.6 Summary Table
 
-By now, you should have:
+| Step | Action | Command/Link |
+|------|--------|--------------|
+| 1    | Install Python, create venv, install packages | `pip install pandas duckdb` |
+| 2    | Download Uber dataset | [GitHub](https://github.com/fivethirtyeight/uber-tlc-foil-response) or [Kaggle](https://www.kaggle.com/datasets/fivethirtyeight/uber-pickups-in-new-york-city) |
+| 3    | Load data in Pandas | `pd.read_csv("filename.csv")` |
+| 4    | Register with DuckDB | `con.register("uber_data", df)` |
 
-- Installed ETL libraries
-- Loaded and explored a dataset
-- Executed a SQL query using DuckDB
+---
 
-In the next chapter, we’ll look at how to systematically extract data from CSVs, SQL databases, and APIs.
-
-*End of Chapter 1*
+You’re now ready to follow the rest of the ebook and build your ETL pipeline!
 
 
 
@@ -211,7 +192,7 @@ pip install sqlalchemy
 from sqlalchemy import create_engine
 
 # Create a connection to an existing SQLite DB
-engine = create_engine("sqlite:///data/uber_data.db")
+engine = create_engine("sqlite:///data/processed_uber_data.db")
 
 # Read a table
 df_sql = pd.read_sql("SELECT * FROM trips", con=engine)
@@ -345,7 +326,7 @@ DuckDB is a high-performance, in-process SQL OLAP engine designed for analytical
 ```python
 import duckdb
 con = duckdb.connect()
-con.register("drivers", df)  # df is a Pandas DataFrame
+con.register("trips", df)  # df is a Pandas DataFrame
 ```
 
 *This code imports DuckDB, creates a connection, and registers a Pandas DataFrame as a DuckDB table. This allows you to run SQL queries directly on your DataFrame.*
@@ -369,7 +350,7 @@ AND trips_completed > 50
 ```python
 query = """
 SELECT driver_id, rating, trips_completed
-FROM drivers
+FROM trips
 WHERE rating >= 4.8 AND acceptance_rate > 0.9 AND trips_completed > 50
 """
 qualified = con.execute(query).fetchdf()
@@ -543,7 +524,7 @@ import sqlite3
 conn = sqlite3.connect("data/processed_uber_data.db")
 
 # Assume result_df is your final DataFrame
-result_df.to_sql("driver_summary", conn, if_exists="replace", index=False)
+result_df.to_sql("trips", conn, if_exists="replace", index=False)
 conn.close()
 ```
 
@@ -693,9 +674,9 @@ from transform import transform_driver_data
 from load import load_to_sqlite
 
 def run_etl_pipeline():
-    raw_df = extract_from_sqlite("data/raw_data.db", "drivers")
+    raw_df = extract_from_sqlite("data/processed_uber_data.db", "trips")
     transformed_df = transform_driver_data(raw_df)
-    load_to_sqlite(transformed_df, "data/processed_data.db", "driver_summary")
+    load_to_sqlite(transformed_df, "data/processed_uber_data.db", "trips")
 ```
 
 This pipeline can now be executed manually, scheduled via cron, or triggered through an API.
@@ -795,7 +776,7 @@ In the context of ETL, optimized SQL improves both extraction and transformation
 Avoid `SELECT *`. Specify only the required columns.
 
 ```sql
-SELECT driver_id, rating, trips_completed FROM drivers;
+SELECT driver_id, rating, trips_completed FROM trips;
 ```
 
 ### ✅ Filter Early and Precisely
@@ -803,7 +784,7 @@ SELECT driver_id, rating, trips_completed FROM drivers;
 Apply `WHERE` clauses as early as possible.
 
 ```sql
-SELECT * FROM drivers WHERE rating >= 4.8 AND trips_completed > 50;
+SELECT * FROM trips WHERE rating >= 4.8 AND trips_completed > 50;
 ```
 
 ### ✅ Use Indexes (for DBMS like PostgreSQL)
@@ -811,7 +792,7 @@ SELECT * FROM drivers WHERE rating >= 4.8 AND trips_completed > 50;
 Create indexes on columns used in `JOIN`, `WHERE`, or `ORDER BY`.
 
 ```sql
-CREATE INDEX idx_driver_rating ON drivers(rating);
+CREATE INDEX idx_driver_rating ON trips(rating);
 ```
 
 ### ✅ Avoid Functions on Indexed Columns
@@ -832,7 +813,7 @@ WHERE trip_date >= '2024-01-01' AND trip_date < '2025-01-01'  -- ✅ efficient
 
 ```sql
 SELECT *
-FROM drivers d
+FROM trips d
 INNER JOIN trips t ON d.driver_id = t.driver_id;
 ```
 
@@ -1227,7 +1208,7 @@ from langchain.llms import OpenAI
 
 from langchain.sql_database import SQLDatabase
 
-db = SQLDatabase.from_uri("sqlite:///data/processed.db")
+db = SQLDatabase.from_uri("sqlite:///data/processed_uber_data.db")
 llm = OpenAI(temperature=0)
 
 chain = SQLDatabaseChain.from_llm(llm, db)
@@ -1394,8 +1375,8 @@ Assume you’ve already saved a processed DataFrame:
 ```python
 import sqlite3
 
-conn = sqlite3.connect("data/processed.db")
-df.to_sql("drivers", conn, if_exists="replace", index=False)
+conn = sqlite3.connect("data/processed_uber_data.db")
+df.to_sql("trips", conn, if_exists="replace", index=False)
 conn.close()
 ```
 
@@ -1423,7 +1404,7 @@ import os
 assert os.getenv("OPENAI_API_KEY") is not None
 
 # Connect to SQLite DB
-db = SQLDatabase.from_uri("sqlite:///data/processed.db")
+db = SQLDatabase.from_uri("sqlite:///data/processed_uber_data.db")
 
 # Set up LLM
 llm = OpenAI(temperature=0)
