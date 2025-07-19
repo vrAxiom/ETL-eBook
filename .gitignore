@@ -3,7 +3,7 @@
 *.pdf
 *.epub
 *.html
-*.md
+book/
 *.png
 *.jpg
 *.jpeg

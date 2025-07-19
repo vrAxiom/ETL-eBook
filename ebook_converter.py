@@ -8,6 +8,8 @@ import webbrowser
 import tempfile
 import urllib.request
 from fpdf.enums import XPos, YPos
+import re
+from PIL import Image
 
 # === CONFIGURATION ===
 BOOK_DIR = Path("book")
@@ -154,7 +156,7 @@ def ensure_font_exists(font_path, url=None):
             raise FileNotFoundError(f"Font not found and no download URL provided: {font_path}")
 
 def sanitize_text(text):
-    """Replace smart quotes and other problematic characters."""
+    """Replace smart quotes and other problematic characters, and remove encoding artifacts like 'Â'."""
     replacements = {
         '\u2018': "'",
         '\u2019': "'",
@@ -169,20 +171,116 @@ def sanitize_text(text):
         '\U0001f310': '', # Globe with meridians emoji
         '\U0001f4c4': '', # Page facing up emoji
         '\U0001f44b': '', # Waving hand emoji
+        '\xc2': '', # Remove stray encoding artifact (Â)
+        'Â': '', # Remove visible artifact
     }
     for smart, basic in replacements.items():
         text = text.replace(smart, basic)
     return text
 
-class MyFPDF(FPDF):
+def clean_html_for_pdf(html):
+    # Remove <style>...</style> and <hr> tags
+    html = re.sub(r'<style.*?>.*?</style>', '', html, flags=re.DOTALL)
+    html = re.sub(r'<hr\s*/?>', '', html, flags=re.IGNORECASE)
+    return html
+
+class MyFPDF(FPDF, HTMLMixin):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.html_font = 'DejaVu'
+        self._in_pre = False
+        self._in_inline_code = False
+        self._in_list = False
+        self._list_type = None
+        self._list_count = 0
+        self._list_indent = 0
 
     def _font_family_for_tag(self, tag):
         if tag in ['code', 'pre']:
             return 'DejaVu'
         return super()._font_family_for_tag(tag)
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'pre':
+            self.ln(3)
+            self.set_font('DejaVu', '', 11)
+            self.set_fill_color(245, 245, 245)
+            self.set_draw_color(200, 200, 200)
+            self.set_text_color(40, 40, 40)
+            self.set_x(self.l_margin + self._list_indent)
+            self.cell(0, 2, '', ln=1)
+            self.set_x(self.l_margin + self._list_indent + 2)
+            self.multi_cell(0, 6, '', border='TLR', fill=True)
+            self.set_x(self.l_margin + self._list_indent + 4)
+            self._in_pre = True
+        elif tag == 'code' and not self._in_pre:
+            self.set_font('DejaVu', '', 11)
+            self.set_fill_color(235, 235, 235)
+            self.set_draw_color(200, 200, 200)
+            self.set_text_color(60, 60, 60)
+            self.set_x(self.get_x() + 1)
+            self._in_inline_code = True
+        elif tag == 'p':
+            self.ln(2)
+        elif tag in ['ul', 'ol']:
+            self._in_list = True
+            self._list_type = tag
+            self._list_count = 0
+            self._list_indent += 6
+            self.ln(2)
+        elif tag == 'li':
+            self._list_count += 1
+            self.ln(1)
+            self.set_x(self.l_margin + self._list_indent)
+            # Only print marker, no extra characters
+            if self._list_type == 'ul':
+                self.cell(6, 6, u'•', ln=0)
+            elif self._list_type == 'ol':
+                self.cell(6, 6, f'{self._list_count}.', ln=0)
+        else:
+            super().handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag):
+        if tag == 'pre':
+            self.cell(0, 2, '', ln=1)
+            self.set_x(self.l_margin + self._list_indent + 2)
+            self.multi_cell(0, 2, '', border='BLR', fill=True)
+            self.set_x(self.l_margin + self._list_indent)
+            self.set_text_color(0, 0, 0)
+            self.set_fill_color(255, 255, 255)
+            self._in_pre = False
+            self.ln(3)
+        elif tag == 'code' and self._in_inline_code:
+            self.set_text_color(0, 0, 0)
+            self.set_fill_color(255, 255, 255)
+            self._in_inline_code = False
+        elif tag == 'p':
+            self.ln(4)
+        elif tag in ['ul', 'ol']:
+            self._in_list = False
+            self._list_type = None
+            self._list_count = 0
+            self._list_indent -= 6
+            self.ln(2)
+        elif tag == 'li':
+            self.ln(2)
+        else:
+            super().handle_endtag(tag)
+
+    def handle_data(self, data):
+        if self._in_pre:
+            # Preserve all leading whitespace for code blocks
+            lines = data.split('\n')
+            for line in lines:
+                self.set_x(self.l_margin + self._list_indent + 4)
+                # Use a monospaced font and preserve indentation
+                self.cell(0, 6, line.expandtabs(), ln=1)
+        elif self._in_inline_code:
+            self.cell(self.get_string_width(data) + 2, 6, data, border=1, ln=0, fill=True)
+        else:
+            # Remove stray encoding artifacts from normal text
+            clean_data = data.replace('Â', '').replace('\xc2', '')
+            super().handle_data(clean_data)
 
 def convert_markdown_to_pdf(output_file):
     pdf = MyFPDF()
@@ -201,8 +299,21 @@ def convert_markdown_to_pdf(output_file):
     cover_path = os.path.join("book", "cover.png")
     if os.path.exists(cover_path):
         pdf.add_page()
-        pdf.image(cover_path, x=0, y=0, w=210)  # A4 width
-        pdf.ln(210)  # Move to next page
+        # --- Fit cover image to A4 page (210x297mm) ---
+        a4_width, a4_height = 210, 297
+        with Image.open(cover_path) as img:
+            img_w, img_h = img.size
+            # Convert px to mm using 72 dpi (FPDF default)
+            dpi = img.info.get('dpi', (72, 72))[0]
+            img_w_mm = img_w * 25.4 / dpi
+            img_h_mm = img_h * 25.4 / dpi
+            scale = min(a4_width / img_w_mm, a4_height / img_h_mm)
+            disp_w = img_w_mm * scale
+            disp_h = img_h_mm * scale
+            x = (a4_width - disp_w) / 2
+            y = (a4_height - disp_h) / 2
+        pdf.image(cover_path, x=x, y=y, w=disp_w, h=disp_h)
+        pdf.ln(a4_height)  # Move to next page
 
     # 2. Table of Contents page (reserve it right after cover)
     pdf.add_page()
@@ -216,22 +327,16 @@ def convert_markdown_to_pdf(output_file):
         pdf.add_page()
         chapter_title = md_file.stem.replace('_', ' ').title()
         toc_entries.append((chapter_title, pdf.page_no()))
-        pdf.set_font("DejaVu", 'B', 16)
-        pdf.cell(0, 10, f"Chapter {idx}: {chapter_title}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.ln(4)
 
         # Convert markdown to HTML
         with open(md_file, 'r', encoding='utf-8') as f:
             md_content = f.read()
         html_content = pypandoc.convert_text(md_content, 'html', format='md')
-        
-        # Sanitize HTML content before writing to PDF
         sanitized_html = sanitize_text(html_content)
-        
+        cleaned_html = clean_html_for_pdf(sanitized_html)
+
         pdf.set_font("DejaVu", '', 12)
-        # Add CSS for more paragraph spacing
-        styled_html = f"<style>p {{ margin-bottom: 12px; }}</style>\n" + sanitized_html
-        pdf.write_html(styled_html)
+        pdf.write_html(cleaned_html)
 
     # 4. Go back to TOC page and write TOC
     pdf.page = toc_page
@@ -297,6 +402,10 @@ def main():
     parser.add_argument('-o', '--output', help='Output file name (optional)')
     args = parser.parse_args()
 
+    # Ensure output directory exists
+    output_dir = 'output'
+    os.makedirs(output_dir, exist_ok=True)
+
     # Check if book directory exists
     if not BOOK_DIR.exists():
         print(f"Book directory '{BOOK_DIR}' not found!")
@@ -335,21 +444,25 @@ def main():
         elif format_choice == 'all' or format_choice == '5':
             args.output = base_name
 
+    # Prepend output directory to output file(s)
+    def out_path(filename):
+        return os.path.join(output_dir, filename)
+
     # Convert based on choice
     if format_choice == '1' or format_choice == 'epub':
-        convert_markdown_to_epub(args.output)
+        convert_markdown_to_epub(out_path(args.output))
     elif format_choice == '2' or format_choice == 'html':
-        convert_markdown_to_html(args.output)
+        convert_markdown_to_html(out_path(args.output))
     elif format_choice == '3' or format_choice == 'pdf':
-        convert_markdown_to_pdf(args.output)
+        convert_markdown_to_pdf(out_path(args.output))
     elif format_choice == '4' or format_choice == 'md':
-        convert_markdown_to_combined_markdown(args.output)
+        convert_markdown_to_combined_markdown(out_path(args.output))
     elif format_choice == '5' or format_choice == 'all':
         base_name = args.output
-        convert_markdown_to_epub(f"{base_name}.epub")
-        convert_markdown_to_html(f"{base_name}.html")
-        convert_markdown_to_pdf(f"{base_name}.pdf")
-        convert_markdown_to_combined_markdown(f"{base_name}_combined.md")
+        convert_markdown_to_epub(out_path(f"{base_name}.epub"))
+        convert_markdown_to_html(out_path(f"{base_name}.html"))
+        convert_markdown_to_pdf(out_path(f"{base_name}.pdf"))
+        convert_markdown_to_combined_markdown(out_path(f"{base_name}_combined.md"))
         print(f"All formats created with base name: {base_name}")
 
 if __name__ == '__main__':
