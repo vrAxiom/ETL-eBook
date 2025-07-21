@@ -3,12 +3,20 @@
 Write-Host "Ebook Converter - PowerShell Script" -ForegroundColor Green
 Write-Host "=====================================" -ForegroundColor Green
 
+
 # Define the virtual environment path
 $venvPath = ".venv"
+$venvScripts = "$venvPath\Scripts"
+$venvPython = "$venvScripts\python.exe"
 
-# Check if the virtual environment exists, if not, create it
-if (-not (Test-Path $venvPath)) {
-    Write-Host "Virtual environment not found. Creating one..." -ForegroundColor Yellow
+# Check if the virtual environment exists and is Windows-compatible
+if (-not (Test-Path $venvPython)) {
+    if (Test-Path $venvPath) {
+        Write-Host "Existing virtual environment is not Windows-compatible. Recreating..." -ForegroundColor Yellow
+        Remove-Item $venvPath -Recurse -Force
+    } else {
+        Write-Host "Virtual environment not found. Creating one..." -ForegroundColor Yellow
+    }
     python -m venv $venvPath
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Failed to create virtual environment." -ForegroundColor Red
@@ -17,20 +25,14 @@ if (-not (Test-Path $venvPath)) {
     Write-Host "Virtual environment created." -ForegroundColor Green
 }
 
-# Activate the virtual environment
+# Activate the virtual environment (for user convenience)
 Write-Host "Activating virtual environment..." -ForegroundColor Yellow
-if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
-    # Windows activation
-    . "$venvPath\Scripts\Activate.ps1"
-} else {
-    # Unix-like activation (for cross-platform compatibility)
-    . "$venvPath/bin/activate"
-}
+. "$venvScripts\Activate.ps1"
 
-# Check if activation was successful (by checking if python is from venv)
-$pythonPath = (Get-Command python).Source
-if ($pythonPath -notlike "*$venvPath*") {
-    Write-Host "Failed to activate virtual environment. Python path: $pythonPath" -ForegroundColor Red
+# Always use the venv's python executable
+$pythonPath = $venvPython
+if (-not (Test-Path $pythonPath)) {
+    Write-Host "Failed to find Python in virtual environment. Path: $pythonPath" -ForegroundColor Red
     exit 1
 }
 Write-Host "Virtual environment activated." -ForegroundColor Green
@@ -40,7 +42,7 @@ if (Test-Path "requirements.txt") {
     Write-Host "Checking for Python dependencies..." -ForegroundColor Yellow
     $depsInstalled = $false
     try {
-        python -c "import ebooklib" 2>$null
+        & $pythonPath -c "import ebooklib" 2>$null
         if ($LASTEXITCODE -eq 0) {
             Write-Host "Dependencies already installed." -ForegroundColor Green
             $depsInstalled = $true
@@ -50,7 +52,7 @@ if (Test-Path "requirements.txt") {
     }
     if (-not $depsInstalled) {
         Write-Host "Dependencies not found or incomplete. Installing from requirements.txt..." -ForegroundColor Yellow
-        pip install -r requirements.txt
+        & $pythonPath -m pip install -r requirements.txt
         if ($LASTEXITCODE -ne 0) {
             Write-Host "Failed to install dependencies." -ForegroundColor Red
             exit 1
@@ -75,7 +77,7 @@ if (-not (Test-Path "ebook_converter.py")) {
 
 # Run the ebook converter
 Write-Host "Running ebook converter..." -ForegroundColor Green
-python ebook_converter.py
+& $pythonPath ebook_converter.py
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Failed to run ebook_converter.py." -ForegroundColor Red
     exit 1
